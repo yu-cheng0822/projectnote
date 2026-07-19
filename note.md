@@ -6,3 +6,235 @@ introduction
 重點 : 
 我們提出了一種“安全機制”，該機制將代理的行為限制在一系列可證明安全的操作範圍內，同時保持其有效的表達能力。核心挑戰在於平衡安全性和實用性：過於嚴格的控制會阻礙合法工作，而過於寬鬆的策略則會留下安全漏洞。我們的關鍵洞見在於，透過系統地使用追蹤能力，可以建構兼具安全性和表達力的框架。能力是一種成熟的安全原語，已被應用於 Hydra [72] 和 Fuchsia [30] 等作業系統以及 CHERI [70] 等硬體中。我們採用物件能力 [26, 44] 的原始形式。
 
+# 2. 追蹤能力（Tracked Capabilities）入門
+
+簡單來說，**能力（Capability）**是一種「具有特殊權限或價值」的物件，例如**檔案控制代碼（File Handle）**、**存取權杖（Access-Permission Token）**或**可變資料結構（Mutable Data Structure）**，通常與程式的**副作用（Effects）**及**權限（Permissions）**有關。
+
+在 Scala 中，能力本質上就是一般物件，它們透過自身的方法授予相應的操作權限，並且可以像一般物件一樣被傳遞或回傳。
+
+例如，一個 `FileSystem` 能力可以提供檔案存取功能：
+
+```scala
+def writeOutput(fs: FileSystem^) =
+  val f = fs.access("OUTPUT.md") // FileEntry capability
+  f.write("The answer is 42.")
+```
+
+---
+
+## 捕獲型別（Capturing Types）
+
+Scala 3 會在**型別（Type）**中追蹤能力。
+
+除了描述值本身的型別之外，型別還會記錄該值可能**捕獲（Capture）**的能力。
+
+捕獲型別（Capturing Type）的形式如下：
+
+```text
+T^{x1, ..., xn}
+```
+
+其中，捕獲集合（Capture Set）`{x1, ..., xn}` 是對此型別值可能存取能力的**保守近似（Over-Approximation）**。
+
+例如，下列閉包（Closure）：
+
+```scala
+(s: String) => f.write(s)
+```
+
+其型別為：
+
+```text
+String ->{f} Unit
+```
+
+這是
+
+```text
+(String -> Unit)^{f}
+```
+
+的簡寫。
+
+此型別明確表示：這個函式會使用能力 `f`。
+
+### 純型別與一般型別
+
+若捕獲集合為空，只寫成：
+
+```text
+T
+```
+
+代表它是一個**純（Pure）**型別，不保留任何能力。
+
+另一方面，
+
+```text
+T^
+```
+
+是
+
+```text
+T^{any}
+```
+
+的簡寫，表示此值可能保留**任意能力**。
+
+Scala 編譯器會自動推導（Infer）並檢查這些能力。任何程式碼若試圖使用**未在型別中宣告的能力**，都會在編譯時被拒絕，而不是等到執行時才發現錯誤。
+
+---
+
+## 區域純性（Local Purity）
+
+由於能力會記錄在型別系統中，因此 Scala 可以在**編譯階段（Compile Time）**保證程式的純性（Purity）。
+
+本研究將敏感資料包裝成 `Classified` 型別，其 `map` 方法只接受**純函式（Pure Function）**：
+
+```scala
+trait Classified[+T]:
+  def map[U](op: T -> U): Classified[U]
+```
+
+其中
+
+```text
+T -> U
+```
+
+表示 `op` **不能捕獲任何能力（Capability）**。
+
+因此，它不能：
+
+- 寫入檔案
+- 發送網路請求
+- 執行任何其他具有副作用（Side Effect）的操作
+
+### 合法範例
+
+```scala
+val secret: Classified[String] =
+  readClassified("key.txt")
+
+secret.map(s => s.toUpperCase)
+```
+
+此程式碼只是將字串轉成大寫，沒有使用任何能力，因此可以正常編譯。
+
+### 非法範例
+
+```scala
+secret.map {
+  s =>
+    f.write(s)
+    s
+}
+```
+
+此閉包會捕獲能力 `f`，因此其推導出的型別為：
+
+```text
+String ->{f} String
+```
+
+然而，`map` 所要求的是純函式：
+
+```text
+String -> String
+```
+
+兩者型別不相容，因此編譯器會直接拒絕。
+
+也就是說，**機密資料可以參與運算，但不能透過副作用洩漏出去**。
+
+---
+
+## 生命週期控制（Lifetime Control）
+
+捕獲檢查（Capture Checking）還可以透過 **with-resource** 模式控制能力的生命週期：
+
+```scala
+def requestFileSystem[T](root: String)
+    (block: FileSystem^ => T): T
+```
+
+執行流程如下：
+
+1. 建立一個 `FileSystem` 能力。
+2. 將它傳入 `block`。
+3. `block` 執行完後，該能力立即失效。
+
+### 能不能偷偷把能力帶出去？
+
+例如：
+
+```scala
+val bad =
+  requestFileSystem("/data"):
+    fs =>
+      () =>
+        fs.access("secret.txt").read()
+
+bad()
+```
+
+乍看之下，似乎可以把 `fs` 包在閉包（Closure）中帶到外部。
+
+但實際上，這段程式**無法通過編譯**。
+
+原因如下：
+
+- 該閉包的型別會在捕獲集合中包含 `fs`。
+- `block` 的回傳型別 `T` 是**區域（Local）型別**，不能引用區域能力 `fs`。
+- 因此，編譯器會拒絕任何仍保留 `fs` 能力的值。
+
+這些值包括：
+
+- 閉包（Closure）
+- 容器（Container）
+- 外部變數（External Variable）
+
+也就是說，**能力不能被偷偷帶離它的有效生命週期**。
+
+---
+
+## 本節重點整理
+
+### Tracked Capabilities 的核心概念
+
+- Capability 是具有特定權限的物件，例如檔案系統、網路或可變資料結構。
+- Scala 3 將 Capability 記錄在型別（Type）中。
+- 型別除了描述資料型態，也描述可能使用哪些 Capability。
+- 編譯器會檢查所有 Capability 是否符合型別宣告。
+
+### Capturing Types
+
+- `T`：純型別（Pure），不保留任何能力。
+- `T^`：可能保留任意能力。
+- `T^{f}`：表示值會捕獲能力 `f`。
+
+### Local Purity
+
+- `Classified` 只允許純函式操作敏感資料。
+- 純函式不能存取檔案、網路等具有副作用的能力。
+- 因此可避免機密資料外洩。
+
+### Lifetime Control
+
+- Capability 只能存在於指定作用範圍（Scope）。
+- 一旦離開 Scope，Capability 就會失效。
+- 編譯器禁止任何方式將 Capability 帶出 Scope。
+
+---
+
+## 小結
+
+Tracked Capabilities 是 Scala 3 提供的一種能力追蹤機制，其特色包括：
+
+- 在型別中記錄能力（Capability）。
+- 編譯期間檢查能力是否合法使用。
+- 保證純函式（Pure Function）不會產生副作用。
+- 防止敏感資訊透過副作用洩漏。
+- 提供細粒度（Fine-Grained）的能力生命週期管理。
+- 避免能力被偷偷帶出其作用範圍，提高程式安全性。
