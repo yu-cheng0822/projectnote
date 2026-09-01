@@ -8,3 +8,4 @@
 6. https://www.youtube.com/watch?v=fwdzsY9KWKk
 ## 工具
 https://aitaskagent-rtdwcgys.manus.space/new-task
+https://www.jetbrains.com/idea/
