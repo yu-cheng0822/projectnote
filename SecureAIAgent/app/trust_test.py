@@ -3,6 +3,20 @@ from trust import TrustEngine
 from policy import PolicyEngine
 from logger import EventLogger
 from risk import RiskEngine
+from tool import ToolExecutor
+
+
+def print_trust(trust):
+
+    print(
+        "Trust:",
+        trust.get_score()
+    )
+
+    print(
+        "Level:",
+        trust.get_level()
+    )
 
 
 def main():
@@ -21,28 +35,37 @@ def main():
     )
 
     # ========================================
-    # 2. 建立安全模組
+    # 2. 建立 Security Modules
     # ========================================
 
     trust = TrustEngine()
-    policy = PolicyEngine(identity, trust)
-    logger = EventLogger()
+
     risk = RiskEngine()
+
+    policy = PolicyEngine(
+        identity,
+        trust,
+        risk
+    )
+
+    logger = EventLogger()
+
+    executor = ToolExecutor()
 
     session_id = "test_session"
 
     # ========================================
-    # 3. 初始 Trust
+    # 3. Initial Trust
     # ========================================
 
     print("===== Dynamic Trust Test =====")
 
     print("\nInitial:")
-    print("Trust:", trust.get_score())
-    print("Level:", trust.get_level())
+
+    print_trust(trust)
 
     # ========================================
-    # 4. 模擬 3 次未授權 database Request
+    # 4. Unauthorized Database Requests
     # ========================================
 
     for i in range(3):
@@ -53,13 +76,50 @@ def main():
 
         tool_name = "database"
 
+        # ------------------------------------
+        # Policy Check
+        # ------------------------------------
+
         allowed, reason = policy.check(
             tool_name
         )
 
-        print("Tool:", tool_name)
-        print("Allowed:", allowed)
-        print("Reason:", reason)
+        print(
+            "Tool:",
+            tool_name
+        )
+
+        print(
+            "Allowed:",
+            allowed
+        )
+
+        print(
+            "Reason:",
+            reason
+        )
+
+        # ------------------------------------
+        # Risk
+        # ------------------------------------
+
+        penalty = risk.get_penalty(
+            tool_name
+        )
+
+        print(
+            "Risk:",
+            risk.get_risk(tool_name)
+        )
+
+        print(
+            "Risk Penalty:",
+            penalty
+        )
+
+        # ------------------------------------
+        # Security Event
+        # ------------------------------------
 
         if not allowed:
 
@@ -69,15 +129,6 @@ def main():
                 tool_name=tool_name,
                 action="REQUEST",
                 result="DENY"
-            )
-
-            penalty = risk.get_penalty(
-                tool_name
-            )
-
-            print(
-                "Risk Penalty:",
-                penalty
             )
 
     # ========================================
@@ -123,7 +174,7 @@ def main():
     )
 
     # ========================================
-    # 7. Behavioral Penalty
+    # 7. Behavioral Penalties
     # ========================================
 
     rate_penalty = (
@@ -145,12 +196,23 @@ def main():
     )
 
     # ========================================
-    # 8. Dynamic Trust Calculation
+    # 8. Database Risk Penalty
     # ========================================
 
-    risk_penalty = risk.get_penalty(
-        "database"
+    risk_penalty = (
+        risk.get_penalty(
+            "database"
+        )
     )
+
+    print(
+        "Risk Penalty:",
+        risk_penalty
+    )
+
+    # ========================================
+    # 9. Dynamic Trust Calculation
+    # ========================================
 
     dynamic_score = (
         trust.calculate_dynamic_trust(
@@ -164,11 +226,6 @@ def main():
     )
 
     print(
-        "Risk Penalty:",
-        risk_penalty
-    )
-
-    print(
         "Dynamic Trust Score:",
         dynamic_score
     )
@@ -179,38 +236,37 @@ def main():
     )
 
     # ========================================
-    # 9. Trust Recovery Test
+    # 10. Trust Recovery Test
     # ========================================
 
     print(
         "\n===== Trust Recovery Test ====="
     )
 
-    print("Before Recovery:")
     print(
-        "Trust:",
-        trust.get_score()
+        "Before Recovery:"
     )
 
-    print(
-        "Level:",
-        trust.get_level()
-    )
+    print_trust(trust)
 
-    # ========================================
-    # 10. 使用 Recovery Tool
-    # ========================================
+    # ----------------------------------------
+    # Recovery Requests
+    # ----------------------------------------
 
     for i in range(5):
 
         tool_name = "recovery"
 
-        allowed, reason = policy.check(
-            tool_name
-        )
-
         print(
             f"\n--- Recovery Request {i + 1} ---"
+        )
+
+        # ------------------------------------
+        # Policy Check
+        # ------------------------------------
+
+        allowed, reason = policy.check(
+            tool_name
         )
 
         print(
@@ -229,12 +285,24 @@ def main():
         )
 
         # ------------------------------------
-        # Recovery 被 Policy 允許
+        # Recovery Risk
+        # ------------------------------------
+
+        print(
+            "Risk:",
+            risk.get_risk(tool_name)
+        )
+
+        # ------------------------------------
+        # 如果允許 Recovery
         # ------------------------------------
 
         if allowed:
 
-            # 記錄 ALLOW Event
+            # -------------------------------
+            # 記錄 Recovery Event
+            # -------------------------------
+
             logger.log(
                 agent_id=identity.agent_id,
                 session_id=session_id,
@@ -243,86 +311,135 @@ def main():
                 result="ALLOW"
             )
 
-            # Trust Recovery
-            trust.recover(5)
-
             print(
-                "Trust Recovery: +5"
+                "Recovery Event: ALLOW"
             )
 
         else:
 
             print(
-                "Trust Recovery: 0"
+                "Recovery Event: DENY"
             )
 
-        print(
-            "Current Trust:",
-            trust.get_score()
-        )
-
-        print(
-            "Current Level:",
-            trust.get_level()
-        )
-
     # ========================================
-    # 11. Recovery 後 Trust
+    # 11. Recalculate Dynamic Trust
     # ========================================
+
+    print(
+        "\n===== Recalculate Dynamic Trust ====="
+    )
+
+    events = logger.get_events()
+
+    # Recovery 行為加入 Behavioral History
+    trust.analyze_history(
+        events
+    )
+
+    # ----------------------------------------
+    # Recovery Reward
+    # ----------------------------------------
+
+    recovery_reward = (
+        trust.calculate_recovery_reward(
+            events
+        )
+    )
+
+    print(
+        "Recovery Reward:",
+        recovery_reward
+    )
+
+    # ----------------------------------------
+    # 重新計算 Dynamic Trust
+    # ----------------------------------------
 
     dynamic_score = (
-        trust.get_score()
+        trust.calculate_dynamic_trust(
+            events,
+            risk_penalty=0
+        )
     )
 
-    dynamic_level = (
-        trust.get_level()
-    )
-
-    print(
-        "\n===== Current Trust After Recovery ====="
-    )
-
-    print(
-        "Dynamic Trust:",
+    trust.set_score(
         dynamic_score
     )
 
     print(
-        "Dynamic Level:",
-        dynamic_level
+        "Dynamic Trust After Recovery:",
+        trust.get_score()
     )
-
-    # ========================================
-    # 12. Final Test
-    # ========================================
 
     print(
-        "\n===== Final Test ====="
+        "Dynamic Trust Level:",
+        trust.get_level()
     )
 
+    # ========================================
+    # Final Tool Execution Test
+    # ========================================
+
+    print("\n===== Final Tool Execution Test =====")
+
     tool_name = "calculator"
+    input_data = "123 * 456"
+
+    # ----------------------------------------
+    # Policy Check
+    # ----------------------------------------
 
     allowed, reason = policy.check(
         tool_name
     )
 
-    print(
-        "Tool:",
-        tool_name
-    )
+    print("Tool:", tool_name)
+    print("Allowed:", allowed)
+    print("Reason:", reason)
+
+    # ----------------------------------------
+    # 如果 Policy ALLOW
+    # 才能真正執行 Tool
+    # ----------------------------------------
+
+    if allowed:
+
+        print("\nPolicy Decision: ALLOW")
+
+        success, result = executor.execute(
+            tool_name,
+            input_data
+        )
+
+        print("Tool Execution:", success)
+        print("Tool Result:", result)
+
+    # ------------------------------------
+    # 記錄 Tool Execution Event
+    # ------------------------------------
+
+        logger.log(
+            agent_id=identity.agent_id,
+            session_id=session_id,
+            tool_name=tool_name,
+            action="EXECUTE",
+            result="ALLOW"
+        )
+
+    else:
+
+        print("\nPolicy Decision: DENY")
+
+        print(
+            "Tool Execution: BLOCKED"
+        )
+
+    # ----------------------------------------
+    # Current Trust
+    # ----------------------------------------
 
     print(
-        "Allowed:",
-        allowed
-    )
-
-    print(
-        "Reason:",
-        reason
-    )
-
-    print(
-        "Current Trust:",
+        "\nCurrent Trust:",
         trust.get_score()
     )
 
@@ -332,15 +449,17 @@ def main():
     )
 
     # ========================================
-    # 13. Event Log
+    # 13. Final Security Event Log
     # ========================================
 
-    print(
-        "\n===== Event Log ====="
-    )
-
+    print("\n===== Event Log =====")
     logger.show_events()
 
 
+# ============================================
+# Program Entry
+# ============================================
+
 if __name__ == "__main__":
+
     main()

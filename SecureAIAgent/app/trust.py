@@ -231,6 +231,45 @@ class TrustEngine:
         )
 
     # ========================================
+    # Recovery Reward
+    # ========================================
+
+    def calculate_recovery_reward(
+        self,
+        events,
+        current_time=None
+    ):
+
+        if current_time is None:
+            current_time = datetime.now()
+
+        recovery_reward = 0
+
+        for event in events:
+
+            # 只有 ALLOW 行為可以產生 Recovery
+            if event.result != "ALLOW":
+                continue
+
+            weight = self.calculate_time_weight(
+                event.timestamp,
+                current_time
+            )
+
+            # 每一次正常行為最多提供 5 分
+            recovery_reward += (
+                5 * weight
+            )
+
+        # 單次分析最多恢復 25 分
+        recovery_reward = min(
+            25,
+            recovery_reward
+        )
+
+        return recovery_reward
+
+    # ========================================
     # Dynamic Trust Calculation
     # ========================================
 
@@ -241,10 +280,16 @@ class TrustEngine:
         current_time=None
     ):
 
+        # ------------------------------------
         # 更新 Behavioral History
+        # ------------------------------------
+
         self.analyze_history(events)
 
-        # 計算 Behavioral Penalty
+        # ------------------------------------
+        # Behavioral Penalty
+        # ------------------------------------
+
         behavioral_penalty = (
             self.calculate_behavioral_penalty(
                 events,
@@ -252,20 +297,110 @@ class TrustEngine:
             )
         )
 
-        # Dynamic Trust Formula
-        score = (
-            100
-            - risk_penalty
-            - behavioral_penalty
+        # ------------------------------------
+        # Recovery Reward
+        # ------------------------------------
+
+        recovery_reward = (
+            self.calculate_recovery_reward(
+                events,
+                current_time
+            )
         )
 
-        # 限制在 0 ~ 100
+        # ------------------------------------
+        # Dynamic Trust Formula
+        # ------------------------------------
+
+        score = (
+            self.score
+            - risk_penalty
+            - behavioral_penalty
+            + recovery_reward
+        )
+
+        # ------------------------------------
+        # 限制 Trust Score 在 0 ~ 100
+        # ------------------------------------
+
         score = max(
             0,
             min(100, score)
         )
 
         return score
+
+    # ========================================
+    # Trust Analysis Report
+    # ========================================
+
+    def get_trust_analysis(
+        self,
+        events,
+        risk_penalty=0,
+        current_time=None
+    ):
+
+        # 更新 Behavioral History
+        self.analyze_history(events)
+
+        # Weighted DENY Rate
+        weighted_deny_rate = (
+            self.get_weighted_deny_rate(
+                events,
+                current_time
+            )
+        )
+
+        # Rate Penalty
+        rate_penalty = (
+            weighted_deny_rate * 20
+        )
+
+        # Repeated Violation Penalty
+        repeated_penalty = (
+            self.get_repeated_violation_penalty()
+        )
+
+        # Recovery Reward
+        recovery_reward = (
+            self.calculate_recovery_reward(
+                events,
+                current_time
+            )
+        )
+
+        # Dynamic Trust
+        dynamic_score = (
+            self.calculate_dynamic_trust(
+                events,
+                risk_penalty,
+                current_time
+            )
+        )
+
+        # Dynamic Trust Level
+        if dynamic_score >= 80:
+            dynamic_level = "HIGH"
+
+        elif dynamic_score >= 50:
+            dynamic_level = "MEDIUM"
+
+        else:
+            dynamic_level = "LOW"
+
+        return {
+            "allow_count": self.allow_count,
+            "deny_count": self.deny_count,
+            "deny_rate": self.get_deny_rate(),
+            "weighted_deny_rate": weighted_deny_rate,
+            "rate_penalty": rate_penalty,
+            "repeated_penalty": repeated_penalty,
+            "risk_penalty": risk_penalty,
+            "recovery_reward": recovery_reward,
+            "dynamic_score": dynamic_score,
+            "dynamic_level": dynamic_level
+        }
 
 
 # ============================================
@@ -281,7 +416,10 @@ if __name__ == "__main__":
 
     now = datetime.now()
 
+    # ----------------------------------------
     # 建立測試事件
+    # ----------------------------------------
+
     events = [
 
         SecurityEvent(
@@ -317,102 +455,88 @@ if __name__ == "__main__":
             tool_name="calculator",
             action="REQUEST",
             result="ALLOW",
-            timestamp=now - timedelta(days=7)
+            timestamp=now 
         )
     ]
 
     print("===== Dynamic Trust Engine Test =====")
 
     # ----------------------------------------
+    # Trust Analysis
+    # ----------------------------------------
+
+    analysis = trust.get_trust_analysis(
+        events,
+        risk_penalty=30,
+        current_time=now
+    )
+
+    # ----------------------------------------
     # Behavioral History
     # ----------------------------------------
 
-    trust.analyze_history(events)
-
     print(
         "ALLOW Count:",
-        trust.get_allow_count()
+        analysis["allow_count"]
     )
 
     print(
         "DENY Count:",
-        trust.get_deny_count()
+        analysis["deny_count"]
     )
 
     print(
         "DENY Rate:",
-        trust.get_deny_rate()
+        analysis["deny_rate"]
     )
 
     # ----------------------------------------
-    # Time Decay
+    # Weighted DENY Rate
     # ----------------------------------------
-
-    weighted_deny_rate = (
-        trust.get_weighted_deny_rate(
-            events,
-            now
-        )
-    )
 
     print(
         "Weighted DENY Rate:",
-        weighted_deny_rate
+        analysis["weighted_deny_rate"]
     )
 
     # ----------------------------------------
     # Penalties
     # ----------------------------------------
 
-    rate_penalty = (
-        weighted_deny_rate * 20
-    )
-
-    repeated_penalty = (
-        trust.get_repeated_violation_penalty()
-    )
-
     print(
         "Rate Penalty:",
-        rate_penalty
+        analysis["rate_penalty"]
     )
 
     print(
         "Repeated Violation Penalty:",
-        repeated_penalty
+        analysis["repeated_penalty"]
+    )
+
+    print(
+        "Risk Penalty:",
+        analysis["risk_penalty"]
+    )
+
+    # ----------------------------------------
+    # Recovery
+    # ----------------------------------------
+
+    print(
+        "Recovery Reward:",
+        analysis["recovery_reward"]
     )
 
     # ----------------------------------------
     # Dynamic Trust
     # ----------------------------------------
 
-    risk_penalty = 30
-
-    dynamic_score = (
-        trust.calculate_dynamic_trust(
-            events,
-            risk_penalty=risk_penalty,
-            current_time=now
-        )
-    )
-
-    print(
-        "Risk Penalty:",
-        risk_penalty
-    )
-
     print(
         "Dynamic Trust Score:",
-        dynamic_score
+        analysis["dynamic_score"]
     )
-
-    # ----------------------------------------
-    # Dynamic Trust Level
-    # ----------------------------------------
-
-    trust.set_score(dynamic_score)
 
     print(
         "Dynamic Trust Level:",
-        trust.get_level()
+        analysis["dynamic_level"]
     )
