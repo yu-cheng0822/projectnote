@@ -1,155 +1,196 @@
 from llm import LocalLLM
 from identity import AgentIdentity
-from session import Session
-from logger import EventLogger
 from trust import TrustEngine
 from policy import PolicyEngine
-from tools.registry import ToolRegistry
-from tools.calculator import CalculatorTool
+
 
 class Agent:
-    def __init__(self):
-        self.llm = LocalLLM()
 
-        self.identity = AgentIdentity(
-            agent_id="agent_001",
-            role="assistant",
-            permissions=["calculator"]
-        )
+    def __init__(
+        self,
+        agent_id,
+        identity,
+        trust,
+        policy,
+        llm=None
+    ):
 
-        self.session = Session(
-            self.identity.agent_id
-        )
+        self.agent_id = agent_id
+        self.identity = identity
+        self.trust = trust
+        self.policy = policy
 
-        self.logger = EventLogger()
+        if llm is None:
+            self.llm = LocalLLM()
+        else:
+            self.llm = llm
 
-        self.trust = TrustEngine()
+    # ========================================
+    # Agent Decision
+    # ========================================
 
-        self.policy = PolicyEngine(
-            self.identity,
-            self.trust
-        ) 
+    def decide(self, user_input):
 
-        self.tools = ToolRegistry()
-
-        self.tools.register(
-            CalculatorTool()
-        )
-
-    def run(self, user_input):
-        print("\nSession:")
-        print("Session ID:", self.session.session_id)
-        print("Active:", self.session.active)
         prompt = f"""
+You are a secure AI agent.
 
-你是一個 AI Agent。
-
-使用者輸入：
+User request:
 {user_input}
 
-你可以使用以下工具：
+Available tools:
+- calculator
 
-calculator：
-執行基本數學運算。
+If the user asks for a mathematical calculation,
+respond using exactly this format:
 
-如果需要計算，請只輸出：
+CALCULATE: <expression>
 
-CALCULATE: 數學表達式
-
-例如：
-
-CALCULATE: 123 * 456
-
-如果不需要計算，請直接回答。
+Otherwise, answer normally.
 """
 
-        decision = self.llm.generate(prompt)
+        decision = self.llm.generate(
+            prompt
+        )
 
-        print("\nAgent Decision:")
-        print(decision)
+        return decision.strip()
 
-        if decision.startswith("CALCULATE:"):
-            expression = decision.replace(
-                "CALCULATE:",
-                ""
-            ).strip()
+    # ========================================
+    # Tool Request
+    # ========================================
 
-            tool_name = "calculator"
-            
-            self.logger.log(
-                agent_id=self.identity.agent_id,
-                session_id=self.session.session_id,
-                tool_name=tool_name,
-                action="REQUEST",
-                result="PENDING"
-            )
+    def request_tool(
+        self,
+        tool_name
+    ):
 
-            print("\nSecurity Check:")
-            print("Agent:", self.identity.agent_id)
-            print("Requested Tool:", tool_name)
+        print(
+            "\n===== Tool Request ====="
+        )
 
-            allowed, reason = self.policy.check(
+        print(
+            "Agent:",
+            self.agent_id
+        )
+
+        print(
+            "Tool:",
+            tool_name
+        )
+
+        print(
+            "Trust:",
+            self.trust.get_score()
+        )
+
+        print(
+            "Trust Level:",
+            self.trust.get_level()
+        )
+
+        # ------------------------------------
+        # Policy Check
+        # ------------------------------------
+
+        allowed, reason = (
+            self.policy.check(
                 tool_name
             )
+        )
 
-            if not allowed:
+        print(
+            "Policy Decision:",
+            "ALLOW"
+            if allowed
+            else "DENY"
+        )
 
-                self.logger.log(
-                    agent_id=self.identity.agent_id,
-                    session_id=self.session.session_id,
-                    tool_name=tool_name,
-                    action="REQUEST",
-                    result="DENY"
+        print(
+            "Reason:",
+            reason
+        )
+
+        return allowed, reason
+
+    # ========================================
+    # Agent Run
+    # ========================================
+
+    def run(
+        self,
+        user_input
+    ):
+
+        decision = self.decide(
+            user_input
+        )
+
+        print(
+            "\n===== Agent Decision ====="
+        )
+
+        print(
+            decision
+        )
+
+        # ------------------------------------
+        # 判斷是否需要 Calculator
+        # ------------------------------------
+
+        if decision.startswith(
+            "CALCULATE:"
+        ):
+
+            allowed, reason = (
+                self.request_tool(
+                    "calculator"
                 )
-
-                self.trust.update_from_event("DENY")
-
-                print("Permission: DENY")
-                print("Reason:", reason)
-
-                self.logger.show_events()
-
-                return "這個操作被安全策略拒絕。"
-
-            print("Permission: ALLOW")
-
-            self.logger.log(
-                agent_id=self.identity.agent_id,
-                session_id=self.session.session_id,
-                tool_name=tool_name,
-                action="REQUEST",
-                result="ALLOW"
             )
 
-            self.trust.update_from_event("ALLOW")
-
-            print("Trust Score:", self.trust.get_score())
-            print("Trust Level:", self.trust.get_level())
-
-            self.logger.show_events()
-
-            tool = self.tools.get(tool_name)
-
-            result = tool.execute(
-                expression=expression
+            return (
+                decision,
+                allowed,
+                reason
             )
 
-            if result is None:
-                return "無法執行這個計算。"
+        return (
+            decision,
+            False,
+            "no_tool_required"
+        )
 
-            final_prompt = f"""
-使用者原本的問題：
 
-{user_input}
+# ============================================
+# Test
+# ============================================
 
-Calculator Tool 的結果：
+if __name__ == "__main__":
 
-{result}
+    identity = AgentIdentity(
+        agent_id="agent_001",
+        role="assistant",
+        permissions=[
+            "calculator"
+        ]
+    )
 
-請使用繁體中文回答使用者。
-不要重新計算。
-"""
+    trust = TrustEngine()
 
-            return self.llm.generate(final_prompt)
+    policy = PolicyEngine(
+        identity,
+        trust
+    )
 
-        return decision
+    agent = Agent(
+        agent_id="agent_001",
+        identity=identity,
+        trust=trust,
+        policy=policy
+    )
+
+    user_input = input(
+        "User："
+    )
+
+    agent.run(
+        user_input
+    )
