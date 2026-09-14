@@ -3,7 +3,7 @@ from identity import AgentIdentity
 from trust import TrustEngine
 from policy import PolicyEngine
 
-#/
+
 class Agent:
 
     def __init__(
