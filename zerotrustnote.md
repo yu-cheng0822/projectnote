@@ -7,3 +7,44 @@ NIST 原本使用的是：
 Per-session / Per-resource
 而你的 Agent Security 可以合理延伸為：
 Per-Tool-Request Authorization
+# 安全架構
+      ProtectedAgent
+                         │
+                         │ Tool Request
+                         ▼
+              ┌────────────────────┐
+              │ SecurityArchitecture│
+              └─────────┬──────────┘
+                        │
+                Agent Identity
+                        │
+                        ▼
+                Permission Check
+                        │
+                        ▼
+                 Risk Assessment
+                        │
+                        ▼
+                Behavior History
+                        │
+                        ▼
+                 Dynamic Trust
+                        │
+                        ▼
+                  Policy Engine
+                   /          \
+               ALLOW          DENY
+                 │              │
+                 └──────┬───────┘
+                        ▼
+                  Security Event
+                        │
+                        ▼
+                Continuous Monitor
+                        │
+                        ▼
+                  Trust Update
+                        │
+                        └─────────────┐
+                                      │
+                     Next Request ◄───┘
