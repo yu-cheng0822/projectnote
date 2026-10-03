@@ -49,4 +49,7 @@ Per-Tool-Request Authorization
                                       │
                      Next Request ◄───┘
 
-#傳統 Zero Trust 假設任何網路位置都不能形成隱含信任；本研究進一步假設任何已連接或已驗證的 AI Agent 也不應形成隱含授權，而應在每一次 Tool Request 發生時，依據 Identity、Permission、Risk 與 Dynamic Trust 重新進行授權與強制執行。
+
+                     
+
+## 傳統 Zero Trust 假設任何網路位置都不能形成隱含信任；本研究進一步假設任何已連接或已驗證的 AI Agent 也不應形成隱含授權，而應在每一次 Tool Request 發生時，依據 Identity、Permission、Risk 與 Dynamic Trust 重新進行授權與強制執行。
