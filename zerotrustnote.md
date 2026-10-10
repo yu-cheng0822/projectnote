@@ -60,5 +60,6 @@ Per-Tool-Request Authorization
 
 <img width="752" height="450" alt="image" src="https://github.com/user-attachments/assets/76d72d95-fcc2-47bf-a0b9-bd28b9d69c32" />
 
-![Uploading image.png…]()
+<img width="848" height="492" alt="image" src="https://github.com/user-attachments/assets/48705ac5-2cff-4dd3-860b-e4db5182d575" />
+
 
