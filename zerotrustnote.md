@@ -70,3 +70,7 @@ Per-Tool-Request Authorization
 
 <img width="886" height="578" alt="image" src="https://github.com/user-attachments/assets/3dcb3d6f-0623-4098-b70b-db4a8344142a" />
 
+<img width="1077" height="601" alt="image" src="https://github.com/user-attachments/assets/625279c1-bdbe-42c3-9b69-c36d0524c2e5" />
+
+<img width="691" height="407" alt="image" src="https://github.com/user-attachments/assets/bd2a5d16-4c53-47a3-aa13-12296310f157" />
+
